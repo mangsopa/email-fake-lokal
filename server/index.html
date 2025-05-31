@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>TempMail Lokal</title>
+</head>
+
+<body>
+    <h1>TempMail Lokal</h1>
+    <button onclick="generateEmail()">🎲 Buat Email Baru</button>
+    <p>Email kamu: <span id="email">-</span></p>
+    <p id="status"></p>
+    <img id="qr" style="max-width: 200px;" />
+    <ul id="inbox"></ul>
+
+
+    <script>
+        let currentEmail = '';
+        let refreshInterval;
+
+        async function generateEmail() {
+            const res = await fetch('http://localhost:3000/generate-email');
+            const data = await res.json();
+            currentEmail = data.email;
+            document.getElementById('email').textContent = currentEmail;
+
+            const qrRes = await fetch(`http://localhost:3000/qr/${encodeURIComponent(currentEmail)}`);
+            const qrData = await qrRes.json();
+            document.getElementById('qr').src = qrData.qr;
+
+            document.getElementById('status').textContent = 'Masa aktif: 10 menit';
+            if (refreshInterval) clearInterval(refreshInterval);
+            loadInbox(); // initial load
+            refreshInterval = setInterval(loadInbox, 10000); // refresh tiap 10 detik
+
+            if (!currentEmail) return alert('Generate email dulu');
+
+            const mailhog = await fetch('http://localhost:3000/send-email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    to: currentEmail,
+                    subject: 'Email Test dari TempMail',
+                    text: 'Ini adalah email test yang dikirim dari frontend ke MailHog.'
+                }),
+            });
+
+            const mailhogs = await res.json();
+            if (res.ok) {
+                alert('Email terkirim ke MailHog');
+            } else {
+                alert('Gagal kirim email: ' + mailhogs.error);
+            }
+        }
+
+        async function loadInbox() {
+            if (!currentEmail) return;
+
+            try {
+                const res = await fetch(`http://localhost:3000/emails/${encodeURIComponent(currentEmail)}`);
+                if (!res.ok) throw new Error('Email expired atau tidak ditemukan');
+
+                const data = await res.json();
+                const inboxList = document.getElementById('inbox');
+                inboxList.innerHTML = '';
+                data.inbox.forEach(email => {
+                    const li = document.createElement('li');
+                    li.innerHTML =
+                        `<b>${email.subject}</b> dari ${email.from} <br> ${email.body.slice(0, 200)}...`;
+                    inboxList.appendChild(li);
+                });
+            } catch (err) {
+                document.getElementById('status').textContent = 'Email expired atau tidak ditemukan.';
+                clearInterval(refreshInterval);
+            }
+        }
+    </script>
+</body>
+
+</html>
